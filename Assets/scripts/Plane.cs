@@ -10,10 +10,10 @@ public class Plane : MonoBehaviour
     //-----------------------------//
     //      Mesh parameters        //
     //-----------------------------//
-    public static readonly int n_grid = 11;
-    public static readonly int n_vertices = n_grid * n_grid;
+    MyMesh mesh;
+    public static readonly int n_grid = MyMesh.n_grid;
+    public static readonly int n_vertices = MyMesh.n_vertices;
     public static readonly int n_edges = 2 * (n_grid - 1) * n_grid + (n_grid - 1) * (n_grid - 1);
-    public Vector3[] vertices;
 
     //-----------------------------//
     //     For calculations        //
@@ -34,14 +34,19 @@ public class Plane : MonoBehaviour
 
     public edge_length_constraint[] edge_constraints;
     public position_constraint[] boundary;
-    public int counter = 0;
+    public int counter;
+
+    static Vector3 segment3(Vector<double> q, int n)
+    {
+        return new Vector3((float)q[3 * n], (float)q[3 * n + 1], (float)q[3 * n + 2]);
+    }
     // Start is called before the first frame update
     void Start()
     {
-        Mesh mesh = GetComponent<MeshFilter>().mesh;
-        vertices = mesh.vertices;
+        mesh = new MyMesh();
+        mesh.Init();
         h = Time.fixedDeltaTime;
-        q = concatenate_vector_array(vertices);
+        q = mesh.get_q();
         velocity = Vector<double>.Build.Dense(3 * n_vertices);
 
         M = Vector<double>.Build.Dense(3 * n_vertices, 1.0);
@@ -117,9 +122,6 @@ public class Plane : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        print(h);
-        Mesh mesh = GetComponent<MeshFilter>().mesh;
-
         //-----------------------------//
         //          hot start          //
         //-----------------------------//
@@ -128,9 +130,12 @@ public class Plane : MonoBehaviour
         {
             g[3 * i + 1] = -9.8;
         }
-        Vector<double> hot_start = q + h * velocity + h * h * M_inv.PointwiseMultiply(g);
+        // Vector<double> hot_start = q + h * velocity + h * h * M_inv.PointwiseMultiply(g);
 
-        for (var j = 0; j < 2; j++)
+        velocity += h * M_inv.PointwiseMultiply(g);
+        Vector<double> hot_start = q + h * velocity;
+        Vector<double> q_new = Vector<double>.Build.Dense(3 * n_vertices);
+        for (var j = 0; j < 10; j++)
         {
 
             //-----------------------------//
@@ -154,18 +159,11 @@ public class Plane : MonoBehaviour
             //         Global step         /
             //-----------------------------//
 
-            Vector<double> q_new = global_LHS.Solve(rhs);
-            Vector<double> velocity_new = (q_new - q) / h;
-            velocity = velocity_new;
-            q = q_new;
+            q_new = global_LHS.Solve(rhs);
         }
-
-        if (counter % 10 == 0)
-        {
-            // mesh update
-            print(q);
-            mesh.vertices = to_vector3_array(q);
-        }
-        counter++;
+        Vector<double> velocity_new = (q_new - q) / h;
+        velocity = velocity_new;
+        q = q_new;
+        mesh.set_position(q);
     }
 }
