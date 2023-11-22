@@ -11,17 +11,17 @@ public class edge_length_constraint
         this.Si = build_S_edge_length(i);
     }
 
-    /////////////////////////////////
-    ///        Grid parameters    ///
-    /////////////////////////////////
+    //-----------------------------//
+    //      Mesh parameters        //
+    //-----------------------------//
     Vector<double> q = Plane.q;
     public static readonly int n_grid = Plane.n_grid;
-    public int n_vertices = Plane.n_vertices;
-    public int n_edges = Plane.n_edges;
+    public readonly int n_vertices = Plane.n_vertices;
+    public readonly int n_edges = Plane.n_edges;
 
-    /////////////////////////////////
-    ///    Helper functions       ///
-    /////////////////////////////////
+    //-----------------------------//
+    //       Helper functions      //
+    //-----------------------------//
     static Vector3 segment3(Vector<double> q, int n)
     {
         return new Vector3((float)q[3 * n], (float)q[3 * n + 1], (float)q[3 * n + 2]);   
@@ -71,8 +71,10 @@ public class edge_length_constraint
         }
         return res;
     }
-
-    Vector<double> project_onto_constraint(Vector<double> q)
+    //-----------------------------//
+    //         Constraints         //
+    //-----------------------------//
+    public Vector<double> project_onto_constraint(Vector<double> q)
     {
         Vector<double> pi = Si * q;
         Vector<double> pi_hat = rest_length * pi / pi.Norm(2);

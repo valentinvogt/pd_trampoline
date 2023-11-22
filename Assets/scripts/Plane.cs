@@ -12,7 +12,7 @@ public class Plane : MonoBehaviour
     //-----------------------------//
     public static readonly int n_grid = 11;
     public static readonly int n_vertices = n_grid * n_grid;
-    public static readonly int n_edges = 2*(n_grid-1)*n_grid + (n_grid-1)*(n_grid-1);
+    public static readonly int n_edges = 2 * (n_grid - 1) * n_grid + (n_grid - 1) * (n_grid - 1);
     public Vector3[] vertices;
 
     //-----------------------------//
@@ -25,31 +25,49 @@ public class Plane : MonoBehaviour
     Matrix<double> global_LHS; // LHS for global step, can be precomputed
     public double h; // time step
 
-    // for constraints
+    //-----------------------------//
+    //      Constraints            //
+    //-----------------------------//
+    public int n_constraints;
     public List<int> constrained_vertices;
+    public List<int> constrained_edges;
+
+    public edge_length_constraint[] edge_constraints;
+    public position_constraint[] boundary;
 
     // Start is called before the first frame update
     void Start()
     {
         Mesh mesh = GetComponent<MeshFilter>().mesh;
         vertices = mesh.vertices;
-        h =  Time.fixedDeltaTime;
+        h = Time.fixedDeltaTime;
         q = concatenate_vector_array(vertices);
         velocity = Vector<double>.Build.Dense(3 * n_vertices);
 
         M = Vector<double>.Build.Dense(3 * n_vertices, 1.0);
         M_inv = Vector<double>.Build.Dense(3 * n_vertices, 1.0);
-        
+
         /////////////////////////////////
         ///      Precomputations      ///
         /////////////////////////////////
-        edge_length_constraint[] E = new edge_length_constraint[n_edges];
+        global_LHS = Matrix<double>.Build.SparseOfDiagonalVector(M_inv) / (h * h);
+        edge_constraints = new edge_length_constraint[n_edges];
+        n_constraints = n_edges;
         for (var i = 0; i < n_edges; i++)
         {
-            E[i] = new edge_length_constraint(i);
+            edge_constraints[i] = new edge_length_constraint(i);
         }
-        Matrix<double> St_S = precompute_w_St_S(E.Select(e => e.Si).ToArray());
-        global_LHS = St_S + Matrix<double>.Build.SparseOfDiagonalVector(M_inv) / (h * h);
+        Matrix<double> St_S_edge_length = precompute_w_St_S(edge_constraints.Select(e => e.Si).ToArray());
+        global_LHS += St_S_edge_length;
+
+        boundary = new position_constraint[n_grid];
+        n_constraints += n_grid;
+        for (var i = 0; i < n_grid; i++)
+        {
+            boundary[i] = new position_constraint(i);
+        }
+        Matrix<double> St_S_boundary = precompute_w_St_S(boundary.Select(b => b.Si).ToArray());
+        global_LHS += St_S_boundary;
     }
 
     Vector<double> concatenate_vector_array(Vector3[] vectors)
@@ -100,15 +118,28 @@ public class Plane : MonoBehaviour
     void Update()
     {
         Mesh mesh = GetComponent<MeshFilter>().mesh;
-        constrained_vertices = new List<int>();
+        // constrained_vertices = new List<int>();
+        // for (var i = 0; i < n_grid; i++)
+        // {
+        //     constrained_vertices.Add(i);
+        // }
+
+        //-----------------------------//
+        //         Local step          //
+        //-----------------------------//
+        Vector<double>[] p = new Vector<double>[n_constraints];
+        for (var i = 0; i < n_edges; i++)
+        {
+            p[i] = edge_constraints[i].project_onto_constraint(q);
+        }
         for (var i = 0; i < n_grid; i++)
         {
-            constrained_vertices.Add(i);
+            p[n_edges + i] = boundary[i].project_onto_constraint(q);
         }
 
-        /////////////////////////////////
-        ///      Gravity Example      ///
-        /////////////////////////////////
+        //-----------------------------//
+        //        External forces      //
+        //-----------------------------//
         Vector<double> g = Vector<double>.Build.Dense(3 * n_vertices);
         for (var i = 0; i < n_vertices; i++)
         {
