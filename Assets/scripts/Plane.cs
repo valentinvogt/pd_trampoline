@@ -3,42 +3,53 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using MathNet.Numerics.LinearAlgebra;
+using System.Linq; // for Select
 
 public class Plane : MonoBehaviour
 {
+    //-----------------------------//
+    //      Mesh parameters        //
+    //-----------------------------//
     public static readonly int n_grid = 11;
     public static readonly int n_vertices = n_grid * n_grid;
     public static readonly int n_edges = 2*(n_grid-1)*n_grid + (n_grid-1)*(n_grid-1);
     public Vector3[] vertices;
+
+    //-----------------------------//
+    //     For calculations        //
+    //-----------------------------//
     public Vector<double> velocity;
-    public Vector<double> q;
+    static public Vector<double> q;
+    public Vector<double> M;
+    public Vector<double> M_inv;
+    Matrix<double> global_LHS; // LHS for global step, can be precomputed
+    public double h; // time step
 
     // for constraints
     public List<int> constrained_vertices;
-    public double[] edge_rest_lengths;
+
     // Start is called before the first frame update
     void Start()
     {
-        /////////////////////////////////
-        ///    Mesh Initialization    ///
-        /////////////////////////////////
         Mesh mesh = GetComponent<MeshFilter>().mesh;
         vertices = mesh.vertices;
+        h =  Time.fixedDeltaTime;
         q = concatenate_vector_array(vertices);
-
         velocity = Vector<double>.Build.Dense(3 * n_vertices);
 
+        M = Vector<double>.Build.Dense(3 * n_vertices, 1.0);
+        M_inv = Vector<double>.Build.Dense(3 * n_vertices, 1.0);
+        
         /////////////////////////////////
         ///      Precomputations      ///
         /////////////////////////////////
-        edge_length_constraints E = new edge_length_constraints();
-        Matrix<double>[] S_edge_length = E.build_S_edge_length();
-        Matrix<double> St_S = precompute_w_St_S(S_edge_length);
-        edge_rest_lengths = new double[n_edges];
+        edge_length_constraint[] E = new edge_length_constraint[n_edges];
         for (var i = 0; i < n_edges; i++)
         {
-            edge_rest_lengths[i] = E.get_edge_length(i,q);
+            E[i] = new edge_length_constraint(i);
         }
+        Matrix<double> St_S = precompute_w_St_S(E.Select(e => e.Si).ToArray());
+        global_LHS = St_S + Matrix<double>.Build.SparseOfDiagonalVector(M_inv) / (h * h);
     }
 
     Vector<double> concatenate_vector_array(Vector3[] vectors)
@@ -64,7 +75,7 @@ public class Plane : MonoBehaviour
         return res;
     }
 
-    Matrix<double> precompute_w_St_S( Matrix<double>[] S, double[] weights = null)
+    Matrix<double> precompute_w_St_S(Matrix<double>[] S, double[] weights = null)
     {
         var M = Matrix<double>.Build;
 
@@ -98,13 +109,11 @@ public class Plane : MonoBehaviour
         /////////////////////////////////
         ///      Gravity Example      ///
         /////////////////////////////////
-        double h = Time.deltaTime;
         Vector<double> g = Vector<double>.Build.Dense(3 * n_vertices);
         for (var i = 0; i < n_vertices; i++)
         {
             g[3 * i + 1] = -9.8;
         }
-        h = Time.deltaTime;
         velocity += h * g;
         q += h * velocity;
         mesh.vertices = to_vector3_array(q);
