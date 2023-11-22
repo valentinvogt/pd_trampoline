@@ -39,13 +39,6 @@ public class Plane : MonoBehaviour
         }
     }
 
-    Vector project_edge_length_constraint(Vector q, Matrix Si, float Li) {
-        // var V = Vector<double>.Build;
-        Vector pi = (Vector)(Si * q);
-        Vector pi_hat = (Vector)(Li * pi / pi.Norm(2));
-        return pi_hat;
-    }
-
     SparseMatrix precompute_w_St_S(SparseMatrix[] S, float[] weights = null)
     {
         if (weights == null)
