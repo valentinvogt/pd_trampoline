@@ -34,7 +34,7 @@ public class Plane : MonoBehaviour
 
     public edge_length_constraint[] edge_constraints;
     public position_constraint[] boundary;
-
+    public int counter = 0;
     // Start is called before the first frame update
     void Start()
     {
@@ -117,36 +117,55 @@ public class Plane : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        print(h);
         Mesh mesh = GetComponent<MeshFilter>().mesh;
-        // constrained_vertices = new List<int>();
-        // for (var i = 0; i < n_grid; i++)
-        // {
-        //     constrained_vertices.Add(i);
-        // }
 
         //-----------------------------//
-        //         Local step          //
-        //-----------------------------//
-        Vector<double>[] p = new Vector<double>[n_constraints];
-        for (var i = 0; i < n_edges; i++)
-        {
-            p[i] = edge_constraints[i].project_onto_constraint(q);
-        }
-        for (var i = 0; i < n_grid; i++)
-        {
-            p[n_edges + i] = boundary[i].project_onto_constraint(q);
-        }
-
-        //-----------------------------//
-        //        External forces      //
+        //          hot start          //
         //-----------------------------//
         Vector<double> g = Vector<double>.Build.Dense(3 * n_vertices);
         for (var i = 0; i < n_vertices; i++)
         {
             g[3 * i + 1] = -9.8;
         }
-        velocity += h * g;
-        q += h * velocity;
-        mesh.vertices = to_vector3_array(q);
+        Vector<double> hot_start = q + h * velocity + h * h * M_inv.PointwiseMultiply(g);
+
+        for (var j = 0; j < 2; j++)
+        {
+
+            //-----------------------------//
+            //         Local steps         //
+            //-----------------------------//
+            Vector<double> rhs = Vector<double>.Build.Dense(3 * n_vertices);
+            rhs += M.PointwiseMultiply(hot_start) / (h * h);
+
+            for (var i = 0; i < n_edges; i++)
+            {
+                Vector<double> p = edge_constraints[i].project_onto_constraint(q);
+                rhs += edge_constraints[i].w * edge_constraints[i].Si.Transpose() * p;
+            }
+            for (var i = 0; i < n_grid; i++)
+            {
+                Vector<double> p = boundary[i].project_onto_constraint(q);
+                rhs += boundary[i].w * boundary[i].Si.Transpose() * p;
+            }
+
+            //-----------------------------//
+            //         Global step         /
+            //-----------------------------//
+
+            Vector<double> q_new = global_LHS.Solve(rhs);
+            Vector<double> velocity_new = (q_new - q) / h;
+            velocity = velocity_new;
+            q = q_new;
+        }
+
+        if (counter % 10 == 0)
+        {
+            // mesh update
+            print(q);
+            mesh.vertices = to_vector3_array(q);
+        }
+        counter++;
     }
 }

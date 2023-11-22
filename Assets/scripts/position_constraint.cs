@@ -4,13 +4,15 @@ using MathNet.Numerics.LinearAlgebra;
 
 public class position_constraint
 {
-    public position_constraint(int i)
+    public position_constraint(int i, double w = 1.0)
     {
         this.rest_position = get_vertex_position(i);
         this.Si = build_S_position(i);
+        this.w = w;
     }
     public Vector<double> rest_position;
     public Matrix<double> Si;
+    public double w = 1.0;
     //-----------------------------//
     //      Mesh parameters        //
     //-----------------------------//

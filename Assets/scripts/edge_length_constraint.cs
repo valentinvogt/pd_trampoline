@@ -6,9 +6,12 @@ public class edge_length_constraint
 {
     public double rest_length;
     public Matrix<double> Si;
-    public edge_length_constraint(int i) {
-        this.rest_length = get_edge_length(i,q);
+    public double w = 1.0;
+    public edge_length_constraint(int i, double w = 1.0)
+    {
+        this.rest_length = get_edge_length(i, q);
         this.Si = build_S_edge_length(i);
+        this.w = w;
     }
 
     //-----------------------------//
@@ -24,7 +27,7 @@ public class edge_length_constraint
     //-----------------------------//
     static Vector3 segment3(Vector<double> q, int n)
     {
-        return new Vector3((float)q[3 * n], (float)q[3 * n + 1], (float)q[3 * n + 2]);   
+        return new Vector3((float)q[3 * n], (float)q[3 * n + 1], (float)q[3 * n + 2]);
     }
 
     int get_vertex_index(int i, int j)
