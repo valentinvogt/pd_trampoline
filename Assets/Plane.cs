@@ -2,19 +2,22 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using MathNet.Numerics.LinearAlgebra;
 using MathNet.Numerics.LinearAlgebra.Double;
 
 public class Plane : MonoBehaviour
 {
-    // Start is called before the first frame update
-    static int n_grid = 11;
+    static readonly int n_grid = 11;
     public int n_vertices = n_grid * n_grid;
     public int n_edges = 220;
     public Vector3[] vertices;
-    public Vector3[] velocity;
+    public Vector<double> velocity;
+    public Vector<double> q;
 
+    // for constraints
     public List<int> constrained_vertices;
-    public float[] edge_rest_lengths;
+    public double[] edge_rest_lengths;
+    // Start is called before the first frame update
     void Start()
     {
         /////////////////////////////////
@@ -22,29 +25,52 @@ public class Plane : MonoBehaviour
         /////////////////////////////////
         Mesh mesh = GetComponent<MeshFilter>().mesh;
         vertices = mesh.vertices;
-        velocity = new Vector3[vertices.Length];
-        for (var i = 0; i < vertices.Length; i++)
-        {
-            velocity[i] = new Vector3(0, 0, 0);
-        }
+        q = concatenate_vector_array(vertices);
+
+        velocity = Vector<double>.Build.Dense(3 * n_vertices);
 
         /////////////////////////////////
         ///      Precomputations      ///
-        SparseMatrix[] S_edge_length = build_S_edge_length();
-        SparseMatrix St_S = precompute_w_St_S(S_edge_length);
-        edge_rest_lengths = new float[n_edges];
+        /////////////////////////////////
+        
+        Matrix<double>[] S_edge_length = build_S_edge_length();
+        Matrix<double> St_S = precompute_w_St_S(S_edge_length);
+        edge_rest_lengths = new double[n_edges];
         for (var i = 0; i < n_edges; i++)
         {
             edge_rest_lengths[i] = get_edge_length(i, vertices);
         }
     }
 
+    Vector<double> concatenate_vector_array(Vector3[] vectors)
+    {
+        int totalComponents = vectors.Length * 3;
+        Vector<double> res = new DenseVector(totalComponents);
+        for (var i = 0; i < vectors.Length; i++)
+        {
+            res[3 * i] = vectors[i][0];
+            res[3 * i + 1] = vectors[i][1];
+            res[3 * i + 2] = vectors[i][2];
+        }
+        return res;
+    }
+
+    Vector3[] to_vector3_array(Vector<double> q)
+    {
+        Vector3[] res = new Vector3[q.Count / 3];
+        for (var i = 0; i < res.Length; i++)
+        {
+            res[i] = new Vector3((float)q[3 * i], (float)q[3 * i + 1], (float)q[3 * i + 2]);
+        }
+        return res;
+    }
+    
     int get_vertex_index(int i, int j)
     {
         return i * n_grid + j;
     }
 
-    float get_edge_length(int edge_idx, Vector3[] vertices)
+    double get_edge_length(int edge_idx, Vector3[] vertices)
     {
         int[] vertices_of_edge = get_vertices_of_edge(edge_idx);
         int v1 = vertices_of_edge[0];
@@ -59,7 +85,7 @@ public class Plane : MonoBehaviour
         int horizontalEdges = (n - 1);
         int verticalEdges = n;
         int diagonalEdges = (n - 1);
-        
+
         int i = edge_idx;
         int row = i / edgesPerGridRow;
         int col = i % edgesPerGridRow;
@@ -84,22 +110,23 @@ public class Plane : MonoBehaviour
         return res;
     }
 
-    SparseMatrix[] build_S_edge_length() {
+    SparseMatrix[] build_S_edge_length()
+    {
         // var M = SparseMatrix.Build;
         SparseMatrix[] S_edge_length = new SparseMatrix[n_edges];
         for (var i = 0; i < n_edges; i++)
         {
-            Tuple<int,int,double>[] entries = new Tuple<int,int,double>[6];
+            Tuple<int, int, double>[] entries = new Tuple<int, int, double>[6];
             int[] vertices = get_vertices_of_edge(i);
             int v1 = vertices[0];
             int v2 = vertices[1];
-            entries[0] = new Tuple<int,int,double>(0, 3 * v1, 1);
-            entries[1] = new Tuple<int,int,double>(1, 3 * v1 + 1, 1);
-            entries[2] = new Tuple<int,int,double>(2, 3 * v1 + 2, 1);
+            entries[0] = new Tuple<int, int, double>(0, 3 * v1, 1);
+            entries[1] = new Tuple<int, int, double>(1, 3 * v1 + 1, 1);
+            entries[2] = new Tuple<int, int, double>(2, 3 * v1 + 2, 1);
 
-            entries[3] = new Tuple<int,int,double>(0, 3 * v2, -1);
-            entries[4] = new Tuple<int,int,double>(1, 3 * v2 + 1, -1);
-            entries[5] = new Tuple<int,int,double>(2, 3 * v2 + 2, -1);
+            entries[3] = new Tuple<int, int, double>(0, 3 * v2, -1);
+            entries[4] = new Tuple<int, int, double>(1, 3 * v2 + 1, -1);
+            entries[5] = new Tuple<int, int, double>(2, 3 * v2 + 2, -1);
 
             SparseMatrix S_i = SparseMatrix.OfIndexed(3, n_vertices * 3, entries);
 
@@ -108,28 +135,31 @@ public class Plane : MonoBehaviour
         return S_edge_length;
     }
 
-    Vector project_edge_length_constraint(Vector q, Matrix Si, float Li) {
+    Vector<double> project_edge_length_constraint(Vector<double> q, Matrix<double> Si, double Li)
+    {
         // var V = Vector<double>.Build;
-        Vector pi = (Vector)(Si * q);
-        Vector pi_hat = (Vector)(Li * pi / pi.Norm(2));
+        Vector<double> pi = Si * q;
+        Vector<double> pi_hat = Li * pi / pi.Norm(2);
         return pi_hat;
     }
 
-    SparseMatrix precompute_w_St_S(SparseMatrix[] S, float[] weights = null)
+    Matrix<double> precompute_w_St_S( Matrix<double>[] S, double[] weights = null)
     {
+        var M = Matrix<double>.Build;
+
         if (weights == null)
         {
-            weights = new float[S.Length];
+            weights = new double[S.Length];
             for (var i = 0; i < S.Length; i++)
             {
                 weights[i] = 1;
             }
         }
 
-        SparseMatrix St_S = SparseMatrix.OfMatrix(weights[0] * S[0].Transpose() * S[0]);
+        Matrix<double> St_S = M.SparseOfMatrix(weights[0] * S[0].Transpose() * S[0]);
         for (var i = 1; i < S.Length; i++)
         {
-            St_S += SparseMatrix.OfMatrix(weights[i] * S[i].Transpose() * S[i]);
+            St_S += M.SparseOfMatrix(weights[i] * S[i].Transpose() * S[i]);
         }
         return St_S;
     }
@@ -138,7 +168,6 @@ public class Plane : MonoBehaviour
     void Update()
     {
         Mesh mesh = GetComponent<MeshFilter>().mesh;
-        Vector3[] vertices = mesh.vertices;
         constrained_vertices = new List<int>();
         for (var i = 0; i < n_grid; i++)
         {
@@ -148,17 +177,15 @@ public class Plane : MonoBehaviour
         /////////////////////////////////
         ///      Gravity Example      ///
         /////////////////////////////////
-        for (var i = 0; i < vertices.Length; i++)
+        double h = Time.deltaTime;
+        Vector<double> g = Vector.Build.Dense(3 * n_vertices);
+        for (var i = 0; i < n_vertices; i++)
         {
-            if (constrained_vertices.Contains(i))
-            {
-                velocity[i] = new Vector3(0, 0, 0);
-                vertices[i][1] = 0;
-            }
-            velocity[i] += new Vector3(0, -9.8f, 0) * Time.deltaTime;
-            vertices[i] += velocity[i] * Time.deltaTime;
+            g[3 * i + 1] = -9.8;
         }
-
-        mesh.vertices = vertices;
+        h = Time.deltaTime;
+        velocity += h * g;
+        q += h * velocity;
+        mesh.vertices = to_vector3_array(q);
     }
 }
